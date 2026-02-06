@@ -3,7 +3,7 @@ Main Application - ESP32
 Centralna klasa App z Dependency Injection
 """
 
-import uasyncio as asyncio
+import uasyncio as asyncio # type: ignore
 import time
 from config import Config
 
@@ -21,7 +21,7 @@ from services.auth_manager import AuthManager
 from services.task_manager import TaskManager
 
 # Warstwa 3: UI
-from ui.views import HomeView, CardReaderView, WiFiView, SettingsView
+from ui.views import HomeView, CardReaderView, WiFiView, SettingsView, CardIdentifierView
 from ui.menu_manager import MenuManager
 from ui.renderer import Renderer
 
@@ -52,7 +52,7 @@ class App:
         
         # Stan aplikacji (shared state)
         self.state = {
-            'current_mode': 'home',  # home, card_reader, wifi, settings
+            'current_mode': 'home',  # home, card_reader, card_identifier, wifi, settings
             'card_present': False,
             'card_uid': None,
             'cards_scanned': 0,
@@ -104,7 +104,7 @@ class App:
             cfg.ENC_CLK,
             cfg.ENC_DT,
             min_val=0,
-            max_val=3,  # 4 menu items
+            max_val=4,  # 5 menu items
             wrap=True
         )
         
@@ -123,13 +123,14 @@ class App:
         self.views = {
             'home': HomeView(),
             'card_reader': CardReaderView(),
+            'card_identifier': CardIdentifierView(),
             'wifi': WiFiView(),
             'settings': SettingsView()
         }
         
         # Menu Manager
         self.menu = MenuManager(self.renderer)
-        self.menu.set_menu_items(['Card Reader', 'WiFi', 'Settings', 'About'])
+        self.menu.set_menu_items(['Card Reader', 'Card Identifier', 'WiFi', 'Settings', 'About'])
         
         # Set initial view
         self.renderer.set_view(self.views['home'])
@@ -138,9 +139,11 @@ class App:
         """Task: Skanowanie NFC (async)"""
         print("[Task] NFC scan task started")
         
+        card_removed_time = None  # Czas odjęcia karty
+        
         while True:
-            if self.state['current_mode'] == 'card_reader':
-                # Skanuj tylko w trybie card_reader
+            if self.state['current_mode'] == 'card_reader' or self.state['current_mode'] == 'card_identifier':
+                # Skanuj tylko w trybie card_reader lub card_identifier
                 card = self.nfc_reader.read_card(timeout=0.3)
                 
                 if card and card['is_new']:
@@ -148,13 +151,14 @@ class App:
                     self.state['card_present'] = True
                     self.state['card_uid'] = card['uid_hex']
                     self.state['cards_scanned'] += 1
+                    card_removed_time = None  # Reset timera
                     
                     self.led.blink(times=1, delay_ms=50)
                     
                     print(f"[NFC] Card detected: {card['uid_hex']}")
                     
-                    # Autentykacja (jeśli nie jest uwierzytelniony)
-                    if not self.auth.is_authenticated():
+                    # Autentykacja (tylko w trybie card_reader)
+                    if self.state['current_mode'] == 'card_reader' and not self.auth.is_authenticated():
                         success = self.auth.authenticate_rfid(
                             card['uid_hex'],
                             self.config.CHIP_SECRET
@@ -165,10 +169,26 @@ class App:
                 elif card and not card['is_new']:
                     # Ta sama karta nadal obecna
                     self.state['card_present'] = True
+                    card_removed_time = None
                 else:
                     # Brak karty
                     self.state['card_present'] = False
-                    self.state['card_uid'] = None
+                    
+                    if self.state['current_mode'] == 'card_identifier':
+                        # W trybie card_identifier - trzymaj UID przez 3 sekundy
+                        if self.state['card_uid'] is not None:
+                            if card_removed_time is None:
+                                card_removed_time = time.time()
+                            elif time.time() - card_removed_time >= 3:
+                                # Minęły 3 sekundy - wyczyść UID
+                                self.state['card_uid'] = None
+                                card_removed_time = None
+                    else:
+                        # W innych trybach - natychmiast wyczyść
+                        self.state['card_uid'] = None
+            else:
+                # Poza trybami skanowania - reset
+                card_removed_time = None
             
             await asyncio.sleep(0.2)  # Scan co 200ms
     
@@ -213,6 +233,10 @@ class App:
                     if selected == 'Card Reader':
                         self.state['current_mode'] = 'card_reader'
                         self.renderer.set_view(self.views['card_reader'])
+                    elif selected == 'Card Identifier':
+                        self.state['current_mode'] = 'card_identifier'
+                        self.state['card_uid'] = None  # Reset UID
+                        self.renderer.set_view(self.views['card_identifier'])
                     elif selected == 'WiFi':
                         self.state['current_mode'] = 'wifi'
                         self.renderer.set_view(self.views['wifi'])

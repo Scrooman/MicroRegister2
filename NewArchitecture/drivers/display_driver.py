@@ -1,6 +1,6 @@
 """OLED Display Driver (SSD1306)"""
 
-from machine import Pin, SoftI2C
+from machine import Pin, SoftI2C # type: ignore
 import sys
 sys.path.append('/lib')
 

@@ -1,6 +1,6 @@
 """NFC Reader Driver (PN532)"""
 
-from machine import I2C, Pin
+from machine import I2C, Pin # type: ignore
 import sys
 sys.path.append('/lib')
 

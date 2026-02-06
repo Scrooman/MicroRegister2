@@ -116,3 +116,27 @@ class SettingsView(View):
             display.text(f"{prefix} {item}", 0, 25 + i * 10)
         
         display.show()
+
+
+class CardIdentifierView(View):
+    """Widok identyfikacji karty"""
+
+    def __init__(self):
+        super().__init__("Card Identifier")
+    
+    def render(self, display, data):
+        display.clear()
+        
+        # Header
+        display.text("Card Identifier", 10, 0)
+        display.text("------------", 20, 10)
+        
+        if data.get('card_uid'):
+            # Wyświetl UID karty
+            display.text("UID:", 10, 28)
+            display.text(data['card_uid'], 10, 42)
+        else:
+            # Czekaj na kartę
+            display.text("Waiting for card...", 10, 35)
+        
+        display.show()
