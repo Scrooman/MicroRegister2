@@ -47,25 +47,21 @@ class CardReaderView(View):
     
     def render(self, display, data: dict):
         display.clear()
-        display.text("NFC Reader", 25, 0)
+        display.text("Chip Reader", 25, 0)
         display.text("------------", 20, 10)
         
         if data.get('card_present'):
-            # Karta wykryta
-            uid = data.get('card_uid', 'Unknown')
-            display.text("Card:", 0, 25)
-            if len(uid) <= 16:
-                display.text(uid, 0, 35)
-            else:
-                display.text(uid[:16], 0, 35)
-                display.text(uid[16:], 0, 45)
-            
-            scanned = data.get('cards_scanned', 0)
-            display.text(f"Total: {scanned}", 0, 55)
+            # Karta wykryta - pokaż UID i zadanie
+            scanned_chips_task_name = data.get('scanned_chips_task_name', 'Unknown Task')
+            display.text("Task:", 0, 25)
+            display.text(f"{scanned_chips_task_name}", 0, 35)
+            # w kolejnej linii wyświetld czas wykrycia karty, jeśli jest dostępny
+            scanned_chips_task_start_time = data.get('scanned_chips_task_start_time', 'Unknown Time')
+            display.text(f"{scanned_chips_task_start_time}", 0, 47)
         else:
             # Czekaj na kartę
             display.text("Waiting for", 25, 30)
-            display.text("NFC card...", 25, 42)
+            display.text("Task chip...", 25, 42)
         
         display.show()
 
@@ -122,13 +118,13 @@ class CardIdentifierView(View):
     """Widok identyfikacji karty"""
 
     def __init__(self):
-        super().__init__("Card Identifier")
+        super().__init__("Auth Card Identifier")
     
     def render(self, display, data):
         display.clear()
         
         # Header
-        display.text("Card Identifier", 10, 0)
+        display.text("Auth Card Identifier", 10, 0)
         display.text("------------", 20, 10)
         
         if data.get('card_uid'):
@@ -138,5 +134,50 @@ class CardIdentifierView(View):
         else:
             # Czekaj na kartę
             display.text("Waiting for card...", 10, 35)
+        
+        display.show()
+
+
+class KeypadView(View):
+    """Widok klawiatury"""
+    
+    def __init__(self):
+        super().__init__("Keypad")
+    
+    def render(self, display, data):
+        display.clear()
+        
+        # Header
+        display.text("Enter PIN", 35, 0)
+        display.text("------------", 20, 10)
+        
+        # Jeśli jest oczekujący UID karty - pokaż info
+        pending_uid = data.get('pending_card_uid')
+        if pending_uid:
+            display.text("Card:", 10, 20)
+            if len(pending_uid) <= 12:
+                display.text(pending_uid[:12], 45, 20)
+            else:
+                display.text(pending_uid[:12] + "...", 45, 20)
+        
+        # Pokaż aktualny bufor
+        buffer = data.get('keypad_buffer', '')
+        max_len = data.get('keypad_max_length', 4)
+        
+        # Wyświetl wprowadzony kod
+        display.text("PIN:", 10, 35)
+        
+        # Wyświetl każdą cyfrę osobno (nie zamieniaj na gwiadki)
+        for i in range(max_len):
+            if i < len(buffer):
+                display.text(buffer[i], 45 + i * 10, 35)
+            else:
+                display.text("_", 45 + i * 10, 35)
+        
+        # Instrukcja
+        if len(buffer) >= max_len:
+            display.text("Press to confirm", 15, 57)
+        else:
+            display.text("Enter digit", 30, 57)
         
         display.show()

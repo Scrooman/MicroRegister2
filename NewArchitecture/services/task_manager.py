@@ -1,6 +1,6 @@
 """Task Manager - Asyncio task coordinator"""
 
-import uasyncio as asyncio
+import uasyncio as asyncio # type: ignore
 
 class TaskManager:
     """Manager zadań asynchronicznych"""

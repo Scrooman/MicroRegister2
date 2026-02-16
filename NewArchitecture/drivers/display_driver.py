@@ -21,6 +21,7 @@ class Display:
         self.oled = SSD1306_I2C(width, height, i2c)
         self.width = width
         self.height = height
+        self._powered_on = True  # Dodaj flagę stanu zasilania
         self.clear()
     
     def clear(self):
@@ -64,3 +65,40 @@ class Display:
     def invert(self, invert: bool):
         """Odwróć kolory"""
         self.oled.invert(invert)
+
+    def power_off(self):
+        """Wyłącz zasilanie ekranu"""
+        if not self._powered_on:
+            return
+        
+        try:
+            # Wyczyść ekran
+            self.clear()
+            self.show()
+            
+            # Wyłącz wyświetlacz (komenda SSD1306)
+            self.oled.poweroff()
+            self._powered_on = False
+            print("[Display] Powered OFF")
+        except Exception as e:
+            print(f"[Display] Error powering off: {e}")
+    
+    def power_on(self):
+        """Włącz zasilanie ekranu"""
+        if self._powered_on:
+            return
+        
+        try:
+            # Włącz wyświetlacz
+            self.oled.poweron()
+            self._powered_on = True
+            
+            # Odśwież ekran
+            self.show()
+            print("[Display] Powered ON")
+        except Exception as e:
+            print(f"[Display] Error powering on: {e}")
+    
+    def is_powered(self):
+        """Sprawdź czy ekran jest włączony"""
+        return self._powered_on

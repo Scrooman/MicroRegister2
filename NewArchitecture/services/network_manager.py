@@ -1,8 +1,8 @@
 """Network Manager - WiFi + HTTP"""
 
-import network
-import urequests
-import ujson
+import network # type: ignore
+import urequests # type: ignore
+import ujson # type: ignore
 import time
 
 class NetworkManager:
@@ -19,7 +19,7 @@ class NetworkManager:
         self._ssid = None
         self._ip = None
     
-    def connect_wifi(self, ssid: str, password: str, timeout=15) -> bool:
+    def connect_wifi(self, ssid: str, password: str, timeout=30) -> bool:
         """
         Połącz z siecią WiFi
         
@@ -76,7 +76,7 @@ class NetworkManager:
             'rssi': self.wlan.status('rssi') if self.is_connected() else None
         }
     
-    def http_post(self, endpoint: str, data: dict, timeout=10) -> tuple:
+    def http_post(self, endpoint: str, data: dict, timeout=60, headers=None) -> tuple:
         """
         Wyślij żądanie POST
         
@@ -90,14 +90,17 @@ class NetworkManager:
         """
         if not self.is_connected():
             print("[Network] Not connected!")
-            return False, None
+            return {'success': False, 'result': None}
         
         if not self.server_url:
             print("[Network] Server URL not set!")
-            return False, None
+            return {'success': False, 'result': None}
         
         url = self.server_url + endpoint
-        headers = {'Content-Type': 'application/json'}
+        if headers is None:
+            headers = {'Content-Type': 'application/json'}
+
+        response = None  # DODAJ - inicjalizuj zmienną przed try
         
         try:
             print(f"[Network] POST {url}")
@@ -109,23 +112,130 @@ class NetworkManager:
             )
             
             if 200 <= response.status_code < 300:
+                    print(f"[Network] POST successful: {response.status_code}")
+                    try:
+                        response_data = response.json()
+                        response.close()
+                        
+                        return {
+                            'success': True, 
+                            'result': response_data.get('result', None),
+                        }
+                    except Exception as e:
+                        print(f"[Network] JSON parse error: {e}")
+                        response.close()
+                        return {'success': True, 'result': {}, 'cookies': {}}
+            elif response.status_code != 200:
                 try:
                     response_data = response.json()
                     response.close()
-                    return True, response_data
+                    return {'success': False, 'result': response_data.get('result', None)}
                 except:
                     response.close()
-                    return True, {}
-            else:
-                print(f"[Network] HTTP error {response.status_code}")
-                response.close()
-                return False, None
+                    return {'success': False, 'result': {}}
+                
+            #jeśli timeout, błąd sieci lub inny problem, złap wyjątek
+
                 
         except Exception as e:
             print(f"[Network] Request failed: {e}")
-            return False, None
+            
+            # POPRAWKA - sprawdź czy response istnieje przed zamknięciem
+            if response is not None:
+                try:
+                    response.close()
+                except:
+                    pass  # Ignoruj błędy przy zamykaniu
+            
+            return {'success': False, 'result': None, 'error': str(e)}
+        
     
-    def http_get(self, endpoint: str, timeout=10) -> tuple:
+    def http_put(self, endpoint: str, data: dict, timeout=60, headers=None) -> dict:
+        """
+        Wyślij żądanie PUT
+        
+        Args:
+            endpoint: Ścieżka endpoint (np. "/api/cards")
+            data: Dane do wysłania
+            timeout: Timeout w sekundach
+            headers: Nagłówki HTTP
+            
+        Returns:
+            tuple: (success: bool, response: dict or None)
+        """
+        if not self.is_connected():
+            print("[Network] Not connected!")
+            return {'success': False, 'result': None}
+        
+        if not self.server_url:
+            print("[Network] Server URL not set!")
+            return {'success': False, 'result': None}
+        
+        url = self.server_url + endpoint
+        if headers is None:
+            print("[Network] No headers provided, using default Content-Type: application/json")
+            headers = {'Content-Type': 'application/json'}
+
+        response = None  # DODAJ - inicjalizuj zmienną przed try
+
+        try:
+            print(f"[Network] PUT {url}")
+            response = urequests.put(
+                url,
+                data=ujson.dumps(data),
+                headers=headers,
+                timeout=timeout
+            )
+            if 200 <= response.status_code < 300:
+                print(f"[Network] PUT successful: {response.status_code}")
+                
+                # Sprawdź nagłówki Content-Length i Connection
+                content_length = response.headers.get('Content-Length', '0')
+                connection = response.headers.get('Connection', '').lower()
+                
+                print(f"[Network] Content-Length: {content_length}, Connection: {connection}")
+                
+                # Parsuj tylko jeśli jest zawartość
+                if int(content_length) > 0:
+                    try:
+                        response_data = response.json()
+                        response.close()
+                        
+                        return {
+                            'success': True, 
+                            'result': response_data.get('result', None),
+                        }
+                    except Exception as e:
+                        print(f"[Network] JSON parse error: {e}")
+                        response.close()
+                        return {'success': True, 'result': {}}
+                else:
+                    print("[Network] Empty response body")
+                    response.close()
+                    return {'success': True, 'result': None}
+                    
+            elif response.status_code == 401:
+                print("[Network] Unauthorized! Access token may be invalid or expired.")
+                response.close()
+                return {'success': False, 'result': None, "error": 401}
+            else:
+                print(f"[Network] PUT failed with status code: {response.status_code}")
+                response.close()
+                return {'success': False, 'result': None, "error": f"HTTP {response.status_code}"}
+                
+        except Exception as e:
+            print(f"[Network] Request failed: {e}")
+            
+            # POPRAWKA - sprawdź czy response istnieje przed zamknięciem
+            if response is not None:
+                try:
+                    response.close()
+                except:
+                    pass
+            
+            return {'success': False, 'result': None, 'error': str(e)}
+    
+    def http_get(self, endpoint: str, timeout=60) -> dict:
         """
         Wyślij żądanie GET
         
@@ -134,15 +244,17 @@ class NetworkManager:
             timeout: Timeout w sekundach
             
         Returns:
-            tuple: (success: bool, response: dict or None)
+            dict: {'success': bool, 'result': dict or None, 'error': str or None}
         """
         if not self.is_connected():
-            return False, None
+            return {'success': False, 'result': None, 'error': 'Not connected'}
         
         if not self.server_url:
-            return False, None
+            return {'success': False, 'result': None, 'error': 'Server URL not set'}
         
         url = self.server_url + endpoint
+
+        response = None  # DODAJ - inicjalizuj zmienną przed try
         
         try:
             response = urequests.get(url, timeout=timeout)
@@ -151,14 +263,22 @@ class NetworkManager:
                 try:
                     response_data = response.json()
                     response.close()
-                    return True, response_data
-                except:
+                    return {'success': True, 'result': response_data.get('result', None), 'error': None}
+                except Exception as e:
                     response.close()
-                    return True, {}
+                    return {'success': True, 'result': {}, 'error': str(e)}
             else:
                 response.close()
-                return False, None
+                return {'success': False, 'result': None, 'error': f"HTTP {response.status_code}"}
                 
         except Exception as e:
             print(f"[Network] Request failed: {e}")
-            return False, None
+            
+            # POPRAWKA - sprawdź czy response istnieje przed zamknięciem
+            if response is not None:
+                try:
+                    response.close()
+                except:
+                    pass
+            
+            return {'success': False, 'result': None, 'error': str(e)}
